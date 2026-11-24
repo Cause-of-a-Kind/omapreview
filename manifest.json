@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "coak.omapreview",
+  "name": "Omapreview",
+  "version": "0.1.0",
+  "author": "Cause of a Kind",
+  "license": "AGPL-3.0-or-later",
+  "description": "Fill and sign PDFs locally.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "qml/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omapreview",
+    "description": "Open the local PDF fill and sign app.",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

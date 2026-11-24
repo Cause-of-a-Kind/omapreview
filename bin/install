@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
+[[ $# -eq 0 || ( $# -eq 1 && "$1" == --desktop-only ) ]] || { printf 'Usage: bin/install [--desktop-only]\n' >&2; exit 2; }
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+PLUGIN="$HOME/.config/omarchy/plugins/coak.omapreview"
+check_link() {
+  if [[ -e "$2" || -L "$2" ]]; then
+    [[ -L "$2" && "$(readlink -f "$2")" == "$(readlink -f "$1")" ]] || { printf 'Refusing to replace unrelated path: %s\n' "$2" >&2; exit 1; }
+  fi
+}
+check_link "$ROOT/bin/omapreview" "$HOME/.local/bin/omapreview"
+check_link "$ROOT/assets/coak.omapreview.desktop" "$DATA/applications/coak.omapreview.desktop"
+check_link "$ROOT/assets/coak.omapreview.svg" "$DATA/icons/hicolor/scalable/apps/coak.omapreview.svg"
+if [[ $# -eq 0 ]]; then
+  [[ ! -e "$PLUGIN" && ! -L "$PLUGIN" ]] || { printf 'Plugin already exists; refusing replacement: %s\n' "$PLUGIN" >&2; exit 1; }
+  command -v omarchy >/dev/null
+  STAGE="$(mktemp -d "${TMPDIR:?TMPDIR must point to a scratch directory}/omapreview-plugin.XXXXXX")"
+  trap 'rm -rf "$STAGE"' EXIT
+  cp "$ROOT/manifest.json" "$STAGE/manifest.json"
+  cp -r "$ROOT/qml" "$STAGE/qml"
+  omarchy plugin validate "$STAGE"
+fi
+"$ROOT/bin/omapreview" --version >/dev/null
+mkdir -p "$HOME/.local/bin" "$DATA/applications" "$DATA/icons/hicolor/scalable/apps"
+ln -sfn "$ROOT/bin/omapreview" "$HOME/.local/bin/omapreview"
+ln -sfn "$ROOT/assets/coak.omapreview.desktop" "$DATA/applications/coak.omapreview.desktop"
+ln -sfn "$ROOT/assets/coak.omapreview.svg" "$DATA/icons/hicolor/scalable/apps/coak.omapreview.svg"
+if command -v update-desktop-database >/dev/null; then update-desktop-database "$DATA/applications"; fi
+if [[ $# -eq 0 ]]; then
+  mkdir -p "$(dirname "$PLUGIN")"
+  cp -r "$STAGE" "$PLUGIN"
+  omarchy plugin validate "$PLUGIN"
+  omarchy-shell shell rescanPlugins
+  omarchy plugin enable coak.omapreview
+fi
+printf 'Installed Omapreview. Launch: omapreview [file.pdf]\n'

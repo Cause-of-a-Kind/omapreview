@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
+command -v uv >/dev/null || { printf 'Install uv first (omarchy pkg add uv).\n' >&2; exit 1; }
+uv venv --allow-existing "$ROOT/.venv" --python /usr/bin/python
+uv pip install --python "$ROOT/.venv/bin/python" -e "$ROOT[test]"

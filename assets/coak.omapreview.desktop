@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Omapreview
+GenericName=PDF Fill and Sign
+Comment=Fill PDF forms, add text, and place your saved signature
+Exec=omapreview %f
+Icon=coak.omapreview
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;
+StartupWMClass=omapreview
+Keywords=PDF;Signature;Initials;Form;
