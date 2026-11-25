@@ -38,34 +38,47 @@ The source PDF is never overwritten. Save a copy writes a PDF that can be opened
 
 Omapreview has two parts: a native desktop application and a small Omarchy bar launcher (`coak.omapreview`). The marketplace installs the bar launcher, not the Python application runtime. Complete the one-time application setup before enabling the plugin.
 
-Requires Omarchy Quattro on Linux, Git, Python 3.11+, and uv. On Omarchy, install uv with `omarchy pkg add uv` if it is missing. Qt Widgets and PDF processing use the pinned PySide6 and PyMuPDF packages in `pyproject.toml`; setup also installs the pinned pytest and pytest-qt development tools. Dependencies live in a checkout-local virtual environment, not the system Python environment. Installation needs network access; filling and signing documents does not.
+The locked installer supports Omarchy Quattro on Linux x86_64 with system CPython 3.14 and glibc 2.39 or newer. Git and uv are trusted host prerequisites; install uv explicitly with `omarchy pkg add uv` if needed. Setup does not download an interpreter or silently resolve dependencies for other platforms. Unsupported systems fail closed rather than selecting a different package graph.
 
-From the published repository:
+Use this exact runtime revision. Do not replace it with `main`, a branch, or a movable tag:
 
-    git clone https://github.com/Cause-of-a-Kind/omapreview.git "${XDG_DATA_HOME:-$HOME/.local/share}/omapreview/app"
-    cd "${XDG_DATA_HOME:-$HOME/.local/share}/omapreview/app"
-    ./bin/setup
+    RUNTIME_REVISION=84c9edf111f710d9ec6615ee6ca60cbcf315936e
+    APP_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/omapreview/app"
+    git clone --no-checkout https://github.com/Cause-of-a-Kind/omapreview.git "$APP_ROOT"
+    git -C "$APP_ROOT" checkout --detach "$RUNTIME_REVISION"
+    cd "$APP_ROOT"
+    ./bin/setup --revision "$RUNTIME_REVISION"
     ./bin/install --desktop-only
     omarchy plugin add https://github.com/Cause-of-a-Kind/omapreview.git --enable
 
-If you already installed Omapreview through the marketplace, run the first four commands to set up the application; do not add the plugin again. Click its bar button, launch Omapreview from the application menu, or choose Omapreview from a PDF's Open With menu. The default PDF viewer is unchanged.
+If the marketplace already installed the bar plugin, complete the runtime commands through `bin/install --desktop-only` and skip the final `omarchy plugin add` command. The bar button, application launcher and PDF Open With entry use that installed application. The default PDF viewer is unchanged.
 
-Keep the application checkout outside `~/.config/omarchy/plugins/`: Omarchy forbids symlinks in plugin payloads, and Python virtual environments contain symlinks. The plugin checkout must remain runtime-free. No dependency download or installation runs when the bar button is clicked.
+Keep the application checkout outside `~/.config/omarchy/plugins/`: Omarchy forbids symlinks in plugin payloads, and Python virtual environments contain symlinks. The plugin checkout must remain runtime-free. No dependency download, build, or installation runs when the bar button is clicked.
 
-## Install from this checkout
+### Reproducible setup boundary
 
-For a development checkout, install both parts locally:
+- `bin/setup --revision` requires the complete 40-character source SHA, matching HEAD, a clean checkout and ordinary Git index flags before invoking uv. It builds from that commit's archived bytes, not ignored or generated checkout files.
+- `requirements-runtime.txt` locks the complete qualified runtime dependency graph to exact versions and SHA-256 distribution hashes. `requirements-build.txt` separately pins and hashes setuptools and the uv build frontend. Their `.in` files record the selected inputs; each generated lock records its compile command.
+- External packages are installed as hash-verified wheels with dependency resolution disabled. The application wheel is built offline with the already verified frontend/backend, without build isolation or additional build downloads, then installed offline and non-editably with `--no-deps`.
+- The launcher runs installed site-packages with Python `-I`; it does not load application code from the checkout, current directory or `PYTHONPATH`. Dependency setup needs network access, but filling/signing documents does not.
+- Setup refuses an existing `.venv`. On failure it removes only the runtime created by that invocation. Use a fresh checkout for a new revision rather than updating a populated environment in place. There is no automatic runtime update.
 
-    ./bin/setup
-    ./bin/install
+The full runtime commit is recorded above in a later documentation-only commit because a commit cannot contain its own SHA. The runtime code, dependency locks, build configuration and launcher are identical between the pinned runtime commit and this listing's documentation commit. Each new runtime revision needs qualification and a new marketplace review; a source push is not marketplace approval. The OS, Git, host Python, initial uv bootstrap, package index and the user's account remain trust boundaries; this is not protection against a compromised host or a security-audit claim.
 
-The installer registers the desktop launcher and PDF Open With entry and enables `coak.omapreview` in the Omarchy bar. It does not change your default PDF viewer, keybindings, or system packages. It refuses unrelated existing launchers or plugin directories. Keep the checkout at its installed location: the launcher points here.
+### Existing installations
 
-For only the desktop application, without changing the Omarchy bar:
+The pre-0.1.1 editable setup is not converted automatically. Save your work and close the app before changing installations. For an upgrade, choose a new application checkout directory, verify and remove only the three old installer-created launcher/desktop/icon symlinks listed under Uninstall, then follow the pinned runtime setup and desktop installation above. Leave an already installed bar plugin in place. Keep the old checkout until the replacement works. Never delete the saved-signature directory or PDFs as part of an upgrade.
 
+## Local development
+
+The production setup intentionally rejects dirty source. In a clean committed development checkout, install the same locked runtime plus the separate test-tool lock explicitly:
+
+    ./bin/setup --revision "$(git rev-parse HEAD)" --dev
     ./bin/install --desktop-only
 
-Omarchy rejects symlinks inside plugin payloads. The installer validates and copies only `manifest.json` and `qml/` into the plugin directory; it deliberately excludes the Python runtime and development files. A clean Git checkout can also serve as the shell plugin source, but the separate application runtime must still be set up.
+`requirements-dev.txt` is installed only with `--dev`; ordinary users do not receive pytest or other test-only tools. `bin/test` intentionally tests checkout source, while the desktop launcher always uses the installed wheel. Rebuild in a fresh checkout/environment when testing a different installed runtime.
+
+The desktop installer registers the application/PDF Open With entry without changing the Omarchy bar when passed `--desktop-only`. Without that flag it also validates/copies the small shell plugin payload, rescans plugins and enables `coak.omapreview`. It refuses unrelated existing launchers or plugin directories and never changes your default PDF viewer, keybindings, or system packages. Keep the application checkout at its installed location because the desktop links point to its launcher and assets.
 
 ## Uninstall
 
