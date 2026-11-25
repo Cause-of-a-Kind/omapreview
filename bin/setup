@@ -1,6 +1,107 @@
-#!/usr/bin/env bash
-set -euo pipefail
-ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
-command -v uv >/dev/null || { printf 'Install uv first (omarchy pkg add uv).\n' >&2; exit 1; }
-uv venv --allow-existing "$ROOT/.venv" --python /usr/bin/python
-uv pip install --python "$ROOT/.venv/bin/python" -e "$ROOT[test]"
+#!/usr/bin/python -I
+"""Provision a fresh, revision-bound runtime; never update an existing one."""
+import argparse
+import io
+import os
+import platform
+import shutil
+import tarfile
+import tempfile
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--revision", required=True, help="reviewed full 40-character Git commit SHA")
+    parser.add_argument("--dev", action="store_true", help="also install the separate locked test dependencies")
+    args = parser.parse_args()
+    if not re.fullmatch(r"[0-9a-f]{40}", args.revision):
+        parser.error("revision must be a full lowercase 40-character commit SHA")
+
+    def git(*argv):
+        return subprocess.check_output(["git", "-C", str(ROOT), *argv], text=True).strip()
+
+    if git("rev-parse", "--show-toplevel") != str(ROOT) or git("rev-parse", "HEAD") != args.revision:
+        parser.error("revision does not match this exact Git checkout")
+    flags = git("ls-files", "-v").splitlines()
+    if (git("status", "--porcelain", "--untracked-files=all")
+            or any(line[0].islower() or line[0] == "S" for line in flags)):
+        parser.error("a clean source checkout is required (including normal Git index flags)")
+    runtime = ROOT / ".venv"
+    if os.path.lexists(runtime):
+        parser.error("existing .venv refused; use a fresh checkout directory")
+    # This lock is qualified only on Omarchy's CPython 3.14, Linux x86_64,
+    # glibc >= 2.39. Do not silently resolve another platform's dependency graph.
+    libc, libc_version = platform.libc_ver()
+    if (sys.implementation.name != "cpython" or sys.version_info[:2] != (3, 14)
+            or sys.platform != "linux" or platform.machine() != "x86_64"
+            or libc != "glibc" or tuple(map(int, libc_version.split(".")[:2])) < (2, 39)):
+        parser.error("supported runtime: CPython 3.14, Linux x86_64, glibc >= 2.39 only")
+    uv = shutil.which("uv")
+    if uv is None:
+        parser.error("install uv first (omarchy pkg add uv)")
+    # Neither ambient uv/pip configuration nor Python import paths may change
+    # the reviewed install contract. The host interpreter, uv, Git and OS remain
+    # trusted prerequisites; no managed interpreter is downloaded by setup.
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("UV_", "PIP_", "PYTHON")) and key != "VIRTUAL_ENV"}
+    env.update(UV_NO_CONFIG="1", UV_PYTHON_DOWNLOADS="never")
+
+    def invoke(*argv):
+        subprocess.run([uv, "--no-config", *map(str, argv)], check=True, env=env)
+
+    def install_lock(python, lock):
+        invoke("pip", "install", "--python", python, "--no-python-downloads",
+               "--default-index", "https://pypi.org/simple", "--require-hashes",
+               "--only-binary", ":all:", "--no-deps", "-r", lock)
+
+    created = False
+    try:
+        # Exclusive ownership: a failed run must never remove an older runtime.
+        runtime.mkdir()
+        created = True
+        with tempfile.TemporaryDirectory(prefix="omapreview-build-") as temporary:
+            staging = Path(temporary)
+            source = staging / "source"
+            source.mkdir()
+            archive = subprocess.check_output(["git", "-C", str(ROOT), "archive", "--format=tar", args.revision])
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tree:
+                tree.extractall(source, filter="data")
+            # Build from committed bytes, not ignored files or generated checkout
+            # artifacts. Build output and the backend env never enter the source.
+            build_env = staging / "backend"
+            invoke("venv", "--python", sys.executable, "--no-python-downloads", build_env)
+            build_python = build_env / "bin/python"
+            install_lock(build_python, source / "requirements-build.txt")
+            # Bootstrap uv is a host prerequisite; all build/install work after
+            # this boundary uses the exact frontend from the hash-verified lock.
+            uv = str(build_env / "bin/uv")
+            wheels = staging / "wheels"
+            invoke("build", source, "--wheel", "--python", build_python,
+                   "--no-python-downloads", "--no-build-isolation", "--offline",
+                   "--no-index", "--out-dir", wheels)
+            wheel_files = list(wheels.glob("omapreview-*.whl"))
+            if len(wheel_files) != 1:
+                raise RuntimeError("expected exactly one application wheel")
+            invoke("venv", "--python", sys.executable, "--no-python-downloads", runtime)
+            python = runtime / "bin/python"
+            install_lock(python, source / "requirements-runtime.txt")
+            if args.dev:
+                install_lock(python, source / "requirements-dev.txt")
+            invoke("pip", "install", "--python", python, "--no-python-downloads",
+                   "--offline", "--no-index", "--no-deps",
+                   "--only-binary", ":all:", wheel_files[0])
+        print(f"Installed noneditable runtime from {args.revision}{' (with dev dependencies)' if args.dev else ''}.")
+    except BaseException:
+        if created:
+            shutil.rmtree(runtime)
+        raise
+
+
+if __name__ == "__main__":
+    main()

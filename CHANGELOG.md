@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.1 — 2026-11-25
+
+Installation supply-chain hardening for marketplace review; PDF editing behavior is unchanged.
+
+- Bind the documented runtime setup to an exact full source commit rather than the default branch.
+- Lock direct and transitive Python dependencies and build tools with SHA-256 artifact hashes.
+- Reject a mismatched or modified source checkout before setup and refuse to overwrite an existing runtime.
+- Install only hash-verified dependency wheels, build the application without network dependency resolution, and install it non-editably.
+- Launch the installed application in isolated Python mode instead of importing source through `PYTHONPATH`.
+- Keep development/test tools separate from the normal desktop runtime.
+
 ## 0.1.0 — 2026-11-24
 
 Initial public release.

@@ -1,0 +1,3 @@
+# setuptools includes bdist_wheel; uv is the pinned PEP 517 frontend.
+setuptools==80.9.0
+uv==0.12.18

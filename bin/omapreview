@@ -5,5 +5,4 @@ if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
   printf 'Omapreview needs its private runtime. Run: %s/bin/setup\n' "$ROOT" >&2
   exit 1
 fi
-export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
-exec "$ROOT/.venv/bin/python" -m omapreview "$@"
+exec "$ROOT/.venv/bin/python" -I -m omapreview "$@"
